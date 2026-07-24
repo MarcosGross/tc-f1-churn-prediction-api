@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Dados (não versionar dados brutos/pesados)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Modelos e artefatos treinados
+models/*.pt
+models/*.pkl
+models/*.joblib
+!models/.gitkeep
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Testes e cobertura
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
