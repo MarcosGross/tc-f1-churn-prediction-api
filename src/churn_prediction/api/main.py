@@ -51,6 +51,14 @@ def get_model():
         _model = joblib.load(MODEL_PATH)
     return _model
 
+@app.get("/")
+def root():
+    return {
+        "name": "Churn Prediction API",
+        "version": "0.1.0",
+        "health": "/health",
+        "docs": "/docs"
+    }
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
