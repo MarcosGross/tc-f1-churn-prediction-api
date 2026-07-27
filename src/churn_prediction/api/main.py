@@ -25,12 +25,9 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Aponta para o modelo campeão. Na Etapa 1 é o baseline de Regressão Logística;
-# na Etapa 2, após a comparação de modelos, este caminho passa a apontar para o
-# modelo campeão final (Random Forest ou MLPClassifier, o que vencer).
-MODEL_PATH = (
-    Path(__file__).resolve().parents[3] / "models" / "baseline_logistic_regression.joblib"
-)
+# Aponta para o modelo campeao, escolhido em train.py (Etapa 2) por comparacao
+# entre Regressao Logistica, Random Forest e MLPClassifier via ROC-AUC.
+MODEL_PATH = Path(__file__).resolve().parents[3] / "models" / "champion_model.joblib"
 
 _model = None
 
@@ -51,14 +48,6 @@ def get_model():
         _model = joblib.load(MODEL_PATH)
     return _model
 
-@app.get("/")
-def root():
-    return {
-        "name": "Churn Prediction API",
-        "version": "0.1.0",
-        "health": "/health",
-        "docs": "/docs"
-    }
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
