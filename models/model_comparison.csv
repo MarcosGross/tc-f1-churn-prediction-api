@@ -1,0 +1,4 @@
+model,roc_auc,pr_auc,f1,recall_churn
+logistic_regression,0.8415,0.6329,0.6136,0.7834
+mlp_classifier,0.8297,0.6175,0.5723,0.5294
+random_forest,0.8218,0.6108,0.5958,0.6444
