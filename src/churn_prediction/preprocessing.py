@@ -63,11 +63,13 @@ def clean_raw_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def split_features_target(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
-    """Separa features (X) do alvo (y), descartando o identificador do cliente."""
+def split_features_target(
+    df: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.Series | None]:
+    """Separa features e alvo, retornando ``None`` quando ``Churn`` não existe."""
     df = df.copy()
 
-    y = None
+    y: pd.Series | None = None
     if TARGET_COLUMN in df.columns:
         y = (df[TARGET_COLUMN] == "Yes").astype(int)
         df = df.drop(columns=[TARGET_COLUMN])
