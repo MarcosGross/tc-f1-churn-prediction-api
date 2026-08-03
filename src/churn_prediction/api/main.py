@@ -8,16 +8,14 @@ Endpoints:
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
-import joblib
 from fastapi import FastAPI, HTTPException
 
 from churn_prediction.api.schemas import ChurnPrediction, CustomerFeatures, HealthResponse
 from churn_prediction.inference import predict_churn
+from churn_prediction.model_loader import load_model
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Churn Prediction API",
@@ -25,28 +23,13 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Aponta para o modelo campeao, escolhido em train.py (Etapa 2) por comparacao
-# entre Regressao Logistica, Random Forest e MLPClassifier via ROC-AUC.
-MODEL_PATH = Path(__file__).resolve().parents[3] / "models" / "champion_model.joblib"
-
-_model = None
-
 
 def get_model():
-    """Carrega o modelo sob demanda (lazy load), uma única vez por processo."""
-    global _model
-    if _model is None:
-        if not MODEL_PATH.exists():
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    f"Modelo não encontrado em {MODEL_PATH}. "
-                    "Rode `python -m churn_prediction.train` antes de subir a API."
-                ),
-            )
-        logger.info("Carregando modelo de %s", MODEL_PATH)
-        _model = joblib.load(MODEL_PATH)
-    return _model
+    """Traduz a ausência do modelo para uma resposta HTTP da API."""
+    try:
+        return load_model()
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @app.get("/health", response_model=HealthResponse)

@@ -23,7 +23,7 @@ def test_health_returns_ok():
 
 
 def test_predict_returns_characterized_prediction(monkeypatch):
-    monkeypatch.setattr(api_main, "_model", FakeChurnModel())
+    monkeypatch.setattr(api_main, "load_model", lambda: FakeChurnModel())
 
     sample_customer = {
         "gender": "Female",
