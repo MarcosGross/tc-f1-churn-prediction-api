@@ -1,18 +1,18 @@
-"""Teste da API — verifica que /health responde corretamente.
+"""Testes de caracterização dos endpoints da API de churn."""
 
-Nota: o teste de /predict fica marcado para rodar apenas se o modelo já foi
-treinado (models/*.joblib existe), já que a API depende de um artefato gerado
-por `python -m churn_prediction.train`.
-"""
-
-from pathlib import Path
-
-import pytest
+import numpy as np
 from fastapi.testclient import TestClient
 
-from churn_prediction.api.main import MODEL_PATH, app
+from churn_prediction.api import main as api_main
 
-client = TestClient(app)
+client = TestClient(api_main.app)
+
+
+class FakeChurnModel:
+    """Modelo controlado para testar a API sem depender do arquivo .joblib."""
+
+    def predict_proba(self, input_df):
+        return np.array([[0.20, 0.80]])
 
 
 def test_health_returns_ok():
@@ -22,11 +22,9 @@ def test_health_returns_ok():
     assert response.json() == {"status": "ok"}
 
 
-@pytest.mark.skipif(
-    not Path(MODEL_PATH).exists(),
-    reason="Modelo ainda não treinado — rode `python -m churn_prediction.train` primeiro.",
-)
-def test_predict_returns_valid_probability():
+def test_predict_returns_characterized_prediction(monkeypatch):
+    monkeypatch.setattr(api_main, "_model", FakeChurnModel())
+
     sample_customer = {
         "gender": "Female",
         "SeniorCitizen": 0,
@@ -52,6 +50,7 @@ def test_predict_returns_valid_probability():
     response = client.post("/predict", json=sample_customer)
 
     assert response.status_code == 200
-    body = response.json()
-    assert 0.0 <= body["churn_probability"] <= 1.0
-    assert body["churn_prediction"] in {"Yes", "No"}
+    assert response.json() == {
+        "churn_probability": 0.80,
+        "churn_prediction": "Yes",
+    }
