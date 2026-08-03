@@ -11,10 +11,10 @@ import logging
 from pathlib import Path
 
 import joblib
-import pandas as pd
 from fastapi import FastAPI, HTTPException
 
 from churn_prediction.api.schemas import ChurnPrediction, CustomerFeatures, HealthResponse
+from churn_prediction.inference import predict_churn
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -58,8 +58,6 @@ def health() -> HealthResponse:
 def predict(customer: CustomerFeatures) -> ChurnPrediction:
     model = get_model()
 
-    input_df = pd.DataFrame([customer.model_dump()])
-    probability = float(model.predict_proba(input_df)[0, 1])
-    prediction = "Yes" if probability >= 0.5 else "No"
+    probability, prediction = predict_churn(model, customer.model_dump())
 
     return ChurnPrediction(churn_probability=probability, churn_prediction=prediction)
