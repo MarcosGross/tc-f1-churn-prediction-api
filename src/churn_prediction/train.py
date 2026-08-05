@@ -7,12 +7,17 @@ Uso:
 Etapa 1: baseline (Regressao Logistica) isolado -> train_baseline().
 Etapa 2: comparacao dos 3 modelos com o MESMO split/seed -> train_and_compare().
 
-Tratamento de desbalanceamento: os 3 candidatos usam a MESMA estrategia --
-SMOTE aplicado dentro do pipeline (so' no .fit(), nunca no .predict()) --
-para que a comparacao entre modelos seja sob o mesmo protocolo. Nao usamos
-class_weight="balanced" em nenhum deles, pois MLPClassifier nao suporta esse
-parametro; misturar estrategias (class_weight em uns, SMOTE em outro)
-tornaria a comparacao entre candidatos injusta.
+Tratamento de desbalanceamento (73% No / 27% Yes) por modelo:
+- LogisticRegression: class_weight="balanced" (nativo).
+- RandomForestClassifier: class_weight="balanced" (nativo).
+- MLPClassifier: NAO tem parametro class_weight no sklearn -- compensamos com
+  oversampling manual da classe minoritaria, aplicado SOMENTE no treino.
+
+Nota: testamos tambem SMOTE aplicado uniformemente aos 3 candidatos (via
+imbalanced-learn) para comparar as duas estrategias sob o mesmo protocolo.
+O campeao e a performance se mantiveram equivalentes nas duas abordagens;
+optamos por esta (mais simples, sem dependencia externa nova). Ver Model Card
+para o registro dessa decisao.
 """
 
 from __future__ import annotations
@@ -22,8 +27,6 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
-from imblearn.over_sampling import SMOTE
-from imblearn.pipeline import Pipeline as ImbPipeline
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -35,6 +38,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
+from sklearn.pipeline import Pipeline
 
 from churn_prediction.preprocessing import (
     build_preprocessing_pipeline,
@@ -52,14 +56,15 @@ MODELS_DIR = PROJECT_ROOT / "models"
 CHAMPION_MODEL_PATH = MODELS_DIR / "champion_model.joblib"
 COMPARISON_TABLE_PATH = MODELS_DIR / "model_comparison.csv"
 
-# Metrica usada para escolher o campeao. E' a metrica tecnica primaria definida
-# no ML Canvas (bloco Offline Evaluation) -- AUC-ROC, por ser robusta a
-# desbalanceamento de classes.
 CHAMPION_METRIC = "roc_auc"
 
 # Margem minima de melhoria exigida de um challenger sobre o baseline (LR)
 # para evitar trocar de campeao por uma diferenca dentro do ruido.
 MIN_IMPROVEMENT = 0.01
+
+# Modelos que nao tem tratamento nativo de desbalanceamento (ver docstring do
+# modulo) e por isso recebem oversampling manual no treino.
+MODELS_REQUIRING_OVERSAMPLING = {"mlp_classifier"}
 
 
 def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
@@ -68,46 +73,55 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
 
 
 def get_candidate_models() -> dict:
-    """Os 3 candidatos exigidos pelo Tech Challenge: linear, ensemble e MLP.
-
-    Nenhum usa class_weight aqui -- o desbalanceamento e' tratado de forma
-    uniforme via SMOTE no pipeline (ver build_pipeline_with_smote), para que
-    os 3 candidatos sejam comparados sob o MESMO protocolo de tratamento de
-    desbalanceamento, e nao com estrategias diferentes por modelo.
-    """
+    """Os 3 candidatos exigidos pelo Tech Challenge: linear, ensemble e MLP."""
     return {
         "logistic_regression": LogisticRegression(
-            random_state=RANDOM_STATE, max_iter=1000
+            random_state=RANDOM_STATE, max_iter=1000, class_weight="balanced"
         ),
         "random_forest": RandomForestClassifier(
             random_state=RANDOM_STATE,
             n_estimators=300,
+            class_weight="balanced",
             n_jobs=-1,
         ),
         "mlp_classifier": MLPClassifier(
             random_state=RANDOM_STATE,
             hidden_layer_sizes=(32, 16),
             max_iter=500,
-            early_stopping=True,  # evita overfitting, para de treinar se parar de melhorar
+            early_stopping=True,
         ),
     }
 
 
-def build_pipeline_with_smote(estimator) -> ImbPipeline:
-    """Preprocessamento -> SMOTE (so' no fit) -> estimador.
-
-    Usado para os 3 candidatos igualmente. O imblearn.Pipeline garante que o
-    SMOTE so' roda durante o .fit() (nos dados de treino) e e' automaticamente
-    ignorado no .predict()/.predict_proba(), evitando vazamento de dados
-    sinteticos para o conjunto de teste.
-    """
-    return ImbPipeline(
+def build_full_pipeline(estimator) -> Pipeline:
+    """Combina pre-processamento + estimador em um Pipeline sklearn puro
+    (sem imblearn -- nao ha mais SMOTE nesta versao)."""
+    return Pipeline(
         steps=[
             ("preprocessing", build_preprocessing_pipeline()),
-            ("smote", SMOTE(random_state=RANDOM_STATE)),
             ("model", estimator),
         ]
     )
+
+
+def oversample_minority(X_train: pd.DataFrame, y_train: pd.Series):
+    """Duplica as linhas da classe minoritaria (Churn=1) SOMENTE no treino.
+
+    Nunca aplicar isso no conjunto de teste -- inflaria a metrica de avaliacao
+    de forma artificial, escondendo o desempenho real do modelo em producao.
+    """
+    minority_mask = y_train == 1
+    X_minority = X_train[minority_mask]
+    y_minority = y_train[minority_mask]
+
+    X_balanced = pd.concat([X_train, X_minority, X_minority], ignore_index=True)
+    y_balanced = pd.concat([y_train, y_minority, y_minority], ignore_index=True)
+
+    logger.info(
+        "Oversampling aplicado: treino foi de %d para %d linhas (classe 1: %d -> %d)",
+        len(X_train), len(X_balanced), minority_mask.sum(), (y_balanced == 1).sum(),
+    )
+    return X_balanced, y_balanced
 
 
 def evaluate_pipeline(pipeline, X_test, y_test) -> dict:
@@ -125,11 +139,8 @@ def evaluate_pipeline(pipeline, X_test, y_test) -> dict:
 def train_and_compare(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """Treina os 3 candidatos com o MESMO split/seed e retorna a comparacao.
 
-    Usar o mesmo split para todos os modelos e' o que torna a comparacao justa
-    -- do contrario, um modelo poderia parecer melhor so' por ter testado em
-    uma fatia de dados mais facil. Da mesma forma, usar a MESMA estrategia de
-    tratamento de desbalanceamento (SMOTE) para os 3 evita que um candidato
-    pareca melhor ou pior so' por ter recebido um tratamento diferente.
+    O oversampling (quando aplicavel) acontece DEPOIS do split, usando apenas
+    os dados de treino -- o conjunto de teste nunca e' tocado.
     """
     df = clean_raw_dataframe(df)
     X, y = split_features_target(df)
@@ -143,8 +154,14 @@ def train_and_compare(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
     for name, estimator in get_candidate_models().items():
         logger.info("Treinando %s...", name)
-        pipeline = build_pipeline_with_smote(estimator)
-        pipeline.fit(X_train, y_train)
+
+        if name in MODELS_REQUIRING_OVERSAMPLING:
+            X_fit, y_fit = oversample_minority(X_train, y_train)
+        else:
+            X_fit, y_fit = X_train, y_train
+
+        pipeline = build_full_pipeline(estimator)
+        pipeline.fit(X_fit, y_fit)
 
         metrics = evaluate_pipeline(pipeline, X_test, y_test)
         rows.append({"model": name, **metrics})
@@ -156,7 +173,6 @@ def train_and_compare(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         CHAMPION_METRIC, ascending=False
     )
 
-    # Relatorio detalhado so' do campeao (definido abaixo), para nao poluir o log
     champion_name = select_champion(comparison_df)
     y_pred_champion = fitted_pipelines[champion_name].predict(X_test)
     logger.info(
@@ -173,8 +189,7 @@ def select_champion(comparison_df: pd.DataFrame) -> str:
 
     Regra do Tech Challenge: Regressao Logistica e' o baseline; Random Forest e
     MLPClassifier PRECISAM supera-la em ROC-AUC (por uma margem minima de
-    MIN_IMPROVEMENT, para evitar trocar de campeao por diferenca de ruido)
-    para serem escolhidos.
+    MIN_IMPROVEMENT, para evitar trocar de campeao por diferenca de ruido).
     """
     baseline_score = comparison_df.loc["logistic_regression", CHAMPION_METRIC]
     challengers = comparison_df.drop(index="logistic_regression")
