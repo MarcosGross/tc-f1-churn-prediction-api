@@ -13,6 +13,29 @@ EDA até uma API de inferencia, comparando modelos do ecossistema **Scikit-Learn
 > API refatorada e testada). Etapa 4 em andamento: Model Card preenchido com
 > auditoria de viés e validação cruzada executadas; falta gravar o vídeo STAR.
 
+## Quickstart (do zero a API rodando)
+```bash
+# 1. Clonar e entrar no projeto
+git clone https://github.com/MarcosGross/tc-f1-churn-prediction-api.git
+cd tc-f1-churn-prediction-api
+
+# 2. Criar ambiente virtual e instalar dependencias
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -e ".[dev]"
+
+# 3. Baixar o dataset para data/raw/Telco-Customer-Churn.csv (ver secao Dataset)
+
+# 4. Treinar o modelo campeao (gera models/champion_model.joblib)
+python -m churn_prediction.train
+
+# 5. Subir a API
+uvicorn churn_prediction.api.main:app --reload
+```
+Acesse http://localhost:8000/docs para testar os endpoints.
+
+**Pre-requisito:** Python 3.11 ou superior.
+
 ## Estrutura do repositorio
 ```
 ├── src/churn_prediction/
@@ -135,13 +158,66 @@ ruff check src tests
 # IMPORTANTE: rode o passo 2 primeiro -- a API carrega models/champion_model.joblib
 uvicorn churn_prediction.api.main:app --reload
 ```
-- Docs interativas: http://localhost:8000/docs
-- `GET /health` -> `{"status": "ok"}`
-- `POST /predict` -> recebe os dados de um cliente, retorna `churn_probability`
-  e `churn_prediction` (Yes/No). Threshold de decisao: 0.5
-  (`churn_prediction.inference.DEFAULT_CHURN_THRESHOLD`). Este valor **nao foi
-  otimizado** — ver Model Card secao 6.1 para a analise de threshold e o motivo
-  de mante-lo em 0.5 nesta versao.
+- Docs interativas (Swagger): http://localhost:8000/docs
+- A API sobe por padrao em `http://localhost:8000`. Para trocar a porta:
+  `uvicorn churn_prediction.api.main:app --reload --port 8080`
+
+### `GET /health`
+Verifica se a API esta no ar.
+```bash
+curl http://localhost:8000/health
+```
+```json
+{"status": "ok"}
+```
+
+### `POST /predict`
+Recebe os dados de um cliente e retorna a propensao de churn.
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "gender": "Female",
+    "SeniorCitizen": 0,
+    "Partner": "Yes",
+    "Dependents": "No",
+    "tenure": 1,
+    "PhoneService": "No",
+    "MultipleLines": "No phone service",
+    "InternetService": "DSL",
+    "OnlineSecurity": "No",
+    "OnlineBackup": "Yes",
+    "DeviceProtection": "No",
+    "TechSupport": "No",
+    "StreamingTV": "No",
+    "StreamingMovies": "No",
+    "Contract": "Month-to-month",
+    "PaperlessBilling": "Yes",
+    "PaymentMethod": "Electronic check",
+    "MonthlyCharges": 29.85,
+    "TotalCharges": 29.85
+  }'
+```
+Resposta:
+```json
+{
+  "churn_probability": 0.8047499944163377,
+  "churn_prediction": "Yes"
+}
+```
+
+**Codigos de resposta:**
+
+| Codigo | Significado |
+|---|---|
+| 200 | Predicao realizada com sucesso |
+| 422 | Payload invalido (campo ausente ou valor fora do dominio esperado) |
+| 503 | Modelo nao encontrado — rode `python -m churn_prediction.train` primeiro |
+
+**Threshold de decisao:** 0.5
+(`churn_prediction.inference.DEFAULT_CHURN_THRESHOLD`). Este valor **nao foi
+otimizado** — ver Model Card secao 6.1 para a analise de threshold e o motivo
+de mante-lo em 0.5 nesta versao.
 
 ## Arquitetura da API
 - `api/main.py` — define os endpoints, traduz erros de dominio (modelo ausente)
@@ -150,6 +226,16 @@ uvicorn churn_prediction.api.main:app --reload
   sem conhecimento de HTTP.
 - `model_loader.py` — carregamento do `.joblib` com cache (`lru_cache`), para
   nao recarregar o modelo a cada requisicao.
+
+## Troubleshooting
+
+| Erro | Causa e solucao |
+|---|---|
+| `503 Modelo nao encontrado` ao chamar `/predict` | O artefato `models/champion_model.joblib` nao existe. Rode `python -m churn_prediction.train`. |
+| `FileNotFoundError: ...Telco-Customer-Churn.csv` | Dataset nao baixado. Ver secao **Dataset** e salvar em `data/raw/`. |
+| `ModuleNotFoundError: No module named 'churn_prediction'` | Pacote nao instalado no ambiente. Ative o venv e rode `pip install -e ".[dev]"`. |
+| `[Errno 48/98] Address already in use` | Porta 8000 ocupada. Suba em outra: `uvicorn churn_prediction.api.main:app --port 8080`. |
+| Notebook nao enxerga alteracoes no codigo | O kernel Jupyter mantem os modulos em cache. Use **Restart** e rode as celulas novamente. |
 
 ## Time
 | Nome | Papel |
