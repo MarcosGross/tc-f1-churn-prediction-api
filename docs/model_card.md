@@ -97,10 +97,50 @@ parâmetro `class_weight`. Sem compensação, seu Recall na classe Churn era 0.5
 com oversampling, subiu para 0.8021 — confirmando que estava sendo penalizado
 injustamente na comparação.
 
-**Alternativa testada e descartada:** SMOTE aplicado uniformemente aos 3 candidatos
-via `imbalanced-learn` (branch `refactor--etapa-2-testes-SMOTENC`). O campeão e as
-métricas se mantiveram equivalentes; optamos pelo oversampling manual por não exigir
-dependência externa nova, mantendo o escopo alinhado ao enunciado.
+### Alternativas testadas e descartadas
+
+Avaliamos duas abordagens baseadas em geração de exemplos sintéticos, ambas via
+`imbalanced-learn`, em branch separada (`refactor--etapa-2-testes-SMOTENC`).
+
+**1. SMOTE aplicado uniformemente aos 3 candidatos**
+
+A motivação era metodológica: usar a *mesma* estratégia de tratamento para todos os
+modelos, evitando que um candidato parecesse melhor ou pior por ter recebido
+tratamento diferente. O campeão e as métricas se mantiveram equivalentes ao
+oversampling manual.
+
+**2. SMOTENC — tecnicamente mais correto, sem ganho empírico**
+
+Testamos SMOTENC como alternativa ao SMOTE puro, especificamente para o
+MLPClassifier (único modelo sem suporte a `class_weight`). A motivação técnica é
+sólida: a maioria das features do dataset é categórica, e o SMOTE puro pode gerar
+**combinações de categoria inválidas** ao interpolar entre vizinhos — produzindo
+valores fracionários em colunas que deveriam ser binárias após o one-hot encoding.
+
+Apesar de mais adequado a dados mistos, o SMOTENC **não trouxe ganho empírico**:
+
+| Modelo | Recall com `class_weight` | Recall com SMOTE puro | Recall com SMOTENC |
+|---|---|---|---|
+| Random Forest | **0.6444** | 0.5775 | 0.5829 |
+
+O Random Forest não melhorou de forma significativa (0.5829 vs 0.5775), e ambos
+ficaram abaixo do resultado com `class_weight="balanced"` (0.6444). O recall da
+Regressão Logística e do MLPClassifier **piorou** em relação ao SMOTE puro.
+
+**Hipótese não testada** para o resultado: o SMOTENC calcula a distância entre
+vizinhos usando as features numéricas em **escala original**, antes do
+`StandardScaler` do pipeline. Como `TotalCharges` varia de 0 a ~8.700 enquanto
+`tenure` vai de 0 a 72, a métrica de distância fica dominada pela feature de maior
+magnitude — o que pode ter degradado a qualidade dos exemplos sintéticos gerados.
+Verificar isso exigiria reordenar o pipeline para escalar antes do resample,
+mantendo o tratamento correto das colunas categóricas.
+
+**Decisão:** mantivemos `class_weight="balanced"` (Regressão Logística e Random
+Forest) e oversampling manual (MLPClassifier). Justificativas:
+1. Melhor resultado empírico entre as três abordagens testadas.
+2. Não exige dependência externa (`imbalanced-learn`), mantendo o escopo alinhado
+   ao enunciado (Scikit-Learn, FastAPI, Pytest).
+3. Menor complexidade de pipeline, sem necessidade de `imblearn.pipeline.Pipeline`.
 
 ---
 
