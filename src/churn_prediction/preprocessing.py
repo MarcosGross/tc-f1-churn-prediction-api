@@ -63,13 +63,11 @@ def clean_raw_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def split_features_target(
-    df: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.Series | None]:
-    """Separa features e alvo, retornando ``None`` quando ``Churn`` não existe."""
+def split_features_target(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+    """Separa features (X) do alvo (y), descartando o identificador do cliente."""
     df = df.copy()
 
-    y: pd.Series | None = None
+    y = None
     if TARGET_COLUMN in df.columns:
         y = (df[TARGET_COLUMN] == "Yes").astype(int)
         df = df.drop(columns=[TARGET_COLUMN])
@@ -112,3 +110,50 @@ def build_full_pipeline(estimator) -> Pipeline:
             ("model", estimator),
         ]
     )
+
+
+# ---------------------------------------------------------------------------
+# CONSTRUTORES DE CENARIO (analise exploratoria de pre-processamento)
+#
+# Usados por train.compare_preprocessing_scenarios() para verificar
+# empiricamente o impacto de escalonamento e balanceamento. O pipeline de
+# PRODUCAO e' o build_full_pipeline() acima -- estes construtores existem para
+# documentar POR QUE aquele e' o escolhido, nao para substitui-lo.
+# ---------------------------------------------------------------------------
+
+
+def build_preprocessing_raw() -> ColumnTransformer:
+    """Cenario 'Raw': one-hot nas categoricas, numericas SEM escalonamento.
+
+    Serve de controle: mostra quanto o StandardScaler contribui de fato.
+    """
+    return ColumnTransformer(
+        transformers=[
+            ("num", "passthrough", NUMERIC_FEATURES),
+            (
+                "cat",
+                OneHotEncoder(handle_unknown="ignore", drop="if_binary"),
+                CATEGORICAL_FEATURES,
+            ),
+        ]
+    )
+
+
+def build_raw_pipeline(estimator) -> Pipeline:
+    """Pipeline do cenario 'Raw' (sem escala)."""
+    return Pipeline(
+        steps=[
+            ("preprocessing", build_preprocessing_raw()),
+            ("model", estimator),
+        ]
+    )
+
+
+def build_scaled_pipeline(estimator) -> Pipeline:
+    """Pipeline do cenario 'Scaled' (com StandardScaler nas numericas).
+
+    E' o mesmo pre-processamento do pipeline de producao -- a diferenca entre
+    'Scaled' e 'Scaled+Balanced' esta' no tratamento de desbalanceamento, que
+    e' aplicado FORA do pipeline (ver train.py).
+    """
+    return build_full_pipeline(estimator)

@@ -14,17 +14,18 @@ from __future__ import annotations
 import logging
 
 import pandas as pd
-from sklearn.metrics import confusion_matrix, recall_score, roc_auc_score
+from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 
-from churn_prediction.preprocessing import build_full_pipeline, clean_raw_dataframe, split_features_target
+from churn_prediction.preprocessing import (
+    build_full_pipeline,
+    clean_raw_dataframe,
+    split_features_target,
+)
 from churn_prediction.train import (
-    MODELS_REQUIRING_OVERSAMPLING,
     RANDOM_STATE,
-
     get_candidate_models,
     load_data,
-    oversample_minority,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
