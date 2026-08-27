@@ -1,27 +1,26 @@
-"""Treina e compara os modelos de churn: Regressao Logistica, Random Forest e
-MLPClassifier. Escolhe o campeao e salva em models/.
+"""Treina e compara os modelos de churn. Escolhe o campeao e salva em models/.
 
 Uso:
-    python -m churn_prediction.train
+    python -m churn_prediction.train              # treino + selecao do campeao
+    python -m churn_prediction.train --scenarios  # + comparacao de cenarios
 
-Etapa 1: baseline (Regressao Logistica) isolado -> train_baseline().
-Etapa 2: comparacao dos 3 modelos com o MESMO split/seed -> train_and_compare().
+Candidatos (Etapa 2): Regressao Logistica (baseline), Random Forest,
+MLPClassifier e KNN (candidato adicional, alem do exigido pelo enunciado).
 
 Tratamento de desbalanceamento (73% No / 27% Yes) por modelo:
 - LogisticRegression: class_weight="balanced" (nativo).
 - RandomForestClassifier: class_weight="balanced" (nativo).
-- MLPClassifier: NAO tem parametro class_weight no sklearn -- compensamos com
-  oversampling manual da classe minoritaria, aplicado SOMENTE no treino.
+- MLPClassifier e KNN: NAO tem parametro class_weight no sklearn -- compensamos
+  com oversampling manual da classe minoritaria, aplicado SOMENTE no treino.
 
-Nota: testamos tambem SMOTE aplicado uniformemente aos 3 candidatos (via
-imbalanced-learn) para comparar as duas estrategias sob o mesmo protocolo.
-O campeao e a performance se mantiveram equivalentes nas duas abordagens;
-optamos por esta (mais simples, sem dependencia externa nova). Ver Model Card
-para o registro dessa decisao.
+Nota: testamos tambem SMOTE e SMOTENC (via imbalanced-learn) para comparar as
+estrategias sob o mesmo protocolo. Nenhuma superou a abordagem atual; optamos
+por esta (mais simples, sem dependencia externa). Ver Model Card, secao 4.
 """
 
 from __future__ import annotations
 
+import argparse
 import logging
 from pathlib import Path
 
@@ -37,11 +36,14 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 
 from churn_prediction.preprocessing import (
     build_preprocessing_pipeline,
+    build_raw_pipeline,
+    build_scaled_pipeline,
     clean_raw_dataframe,
     split_features_target,
 )
@@ -55,16 +57,18 @@ DATA_PATH = PROJECT_ROOT / "data" / "raw" / "Telco-Customer-Churn.csv"
 MODELS_DIR = PROJECT_ROOT / "models"
 CHAMPION_MODEL_PATH = MODELS_DIR / "champion_model.joblib"
 COMPARISON_TABLE_PATH = MODELS_DIR / "model_comparison.csv"
+SCENARIOS_TABLE_PATH = MODELS_DIR / "preprocessing_scenarios.csv"
 
 CHAMPION_METRIC = "roc_auc"
 
 # Margem minima de melhoria exigida de um challenger sobre o baseline (LR)
-# para evitar trocar de campeao por uma diferenca dentro do ruido.
+# para evitar trocar de campeao por uma diferenca dentro do ruido. A validacao
+# cruzada (ver evaluation.py) confirmou que o desvio entre folds e' ~0.014.
 MIN_IMPROVEMENT = 0.01
 
-# Modelos que nao tem tratamento nativo de desbalanceamento (ver docstring do
-# modulo) e por isso recebem oversampling manual no treino.
-MODELS_REQUIRING_OVERSAMPLING = {"mlp_classifier"}
+# Modelos sem tratamento nativo de desbalanceamento -- recebem oversampling
+# manual no treino.
+MODELS_REQUIRING_OVERSAMPLING = {"mlp_classifier", "knn"}
 
 
 def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
@@ -73,7 +77,11 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
 
 
 def get_candidate_models() -> dict:
-    """Os 3 candidatos exigidos pelo Tech Challenge: linear, ensemble e MLP."""
+    """Candidatos avaliados: linear, ensemble, MLP e KNN.
+
+    Os tres primeiros sao exigidos pelo Tech Challenge; o KNN foi adicionado
+    como candidato extra para ampliar a comparacao.
+    """
     return {
         "logistic_regression": LogisticRegression(
             random_state=RANDOM_STATE, max_iter=1000, class_weight="balanced"
@@ -90,12 +98,12 @@ def get_candidate_models() -> dict:
             max_iter=500,
             early_stopping=True,
         ),
+        "knn": KNeighborsClassifier(n_neighbors=5, n_jobs=-1),
     }
 
 
 def build_full_pipeline(estimator) -> Pipeline:
-    """Combina pre-processamento + estimador em um Pipeline sklearn puro
-    (sem imblearn -- nao ha mais SMOTE nesta versao)."""
+    """Combina pre-processamento + estimador em um Pipeline sklearn puro."""
     return Pipeline(
         steps=[
             ("preprocessing", build_preprocessing_pipeline()),
@@ -136,18 +144,22 @@ def evaluate_pipeline(pipeline, X_test, y_test) -> dict:
     }
 
 
+def _split(df: pd.DataFrame):
+    """Split estratificado 80/20 com seed fixa -- unico ponto de divisao."""
+    df = clean_raw_dataframe(df)
+    X, y = split_features_target(df)
+    return train_test_split(
+        X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y
+    )
+
+
 def train_and_compare(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """Treina os 3 candidatos com o MESMO split/seed e retorna a comparacao.
+    """Treina os candidatos com o MESMO split/seed e retorna a comparacao.
 
     O oversampling (quando aplicavel) acontece DEPOIS do split, usando apenas
     os dados de treino -- o conjunto de teste nunca e' tocado.
     """
-    df = clean_raw_dataframe(df)
-    X, y = split_features_target(df)
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y
-    )
+    X_train, X_test, y_train, y_test = _split(df)
 
     fitted_pipelines = {}
     rows = []
@@ -184,12 +196,66 @@ def train_and_compare(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return comparison_df, fitted_pipelines
 
 
+def compare_preprocessing_scenarios(df: pd.DataFrame) -> pd.DataFrame:
+    """Analise exploratoria: mede o impacto de escalonamento e balanceamento.
+
+    Cenarios avaliados (mesmo split/seed em todos):
+    - Raw:             one-hot, numericas sem escala, sem balanceamento
+    - Scaled:          + StandardScaler nas numericas
+    - Scaled+Balanced: + oversampling da classe minoritaria no treino
+
+    IMPORTANTE: esta funcao NAO seleciona o campeao nem altera artefatos de
+    producao. Ela existe para documentar empiricamente por que o pipeline de
+    producao usa escalonamento + balanceamento. Os modelos aqui rodam SEM
+    class_weight, para que o balanceamento seja de fato a variavel testada.
+    """
+    X_train, X_test, y_train, y_test = _split(df)
+
+    models = {
+        "Logistic Reg": LogisticRegression(random_state=RANDOM_STATE, max_iter=1000),
+        "Random Forest": RandomForestClassifier(
+            random_state=RANDOM_STATE, n_estimators=300, n_jobs=-1
+        ),
+        "MLP": MLPClassifier(
+            random_state=RANDOM_STATE, hidden_layer_sizes=(32, 16),
+            max_iter=500, early_stopping=True,
+        ),
+        "KNN": KNeighborsClassifier(n_neighbors=5, n_jobs=-1),
+    }
+
+    scenarios = {
+        "Raw": (build_raw_pipeline, False),
+        "Scaled": (build_scaled_pipeline, False),
+        "Scaled+Balanced": (build_scaled_pipeline, True),
+    }
+
+    rows = []
+    for scenario_name, (builder, apply_balancing) in scenarios.items():
+        if apply_balancing:
+            X_fit, y_fit = oversample_minority(X_train, y_train)
+        else:
+            X_fit, y_fit = X_train, y_train
+
+        for model_name, model in models.items():
+            logger.info("Cenario %s | %s", scenario_name, model_name)
+
+            pipeline = builder(model)
+            pipeline.fit(X_fit, y_fit)
+
+            metrics = evaluate_pipeline(pipeline, X_test, y_test)
+            rows.append({"scenario": scenario_name, "model": model_name, **metrics})
+
+    return pd.DataFrame(rows).sort_values(
+        ["scenario", CHAMPION_METRIC], ascending=[True, False]
+    )
+
+
 def select_champion(comparison_df: pd.DataFrame) -> str:
     """Escolhe o campeao pela metrica tecnica primaria (ROC-AUC, ver ML Canvas).
 
-    Regra do Tech Challenge: Regressao Logistica e' o baseline; Random Forest e
-    MLPClassifier PRECISAM supera-la em ROC-AUC (por uma margem minima de
-    MIN_IMPROVEMENT, para evitar trocar de campeao por diferenca de ruido).
+    Regra do Tech Challenge: Regressao Logistica e' o baseline; os demais
+    candidatos PRECISAM supera-la em ROC-AUC por uma margem minima de
+    MIN_IMPROVEMENT, para evitar trocar de campeao por diferenca de ruido.
     """
     baseline_score = comparison_df.loc["logistic_regression", CHAMPION_METRIC]
     challengers = comparison_df.drop(index="logistic_regression")
@@ -208,6 +274,14 @@ def select_champion(comparison_df: pd.DataFrame) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Treino e comparacao de modelos de churn.")
+    parser.add_argument(
+        "--scenarios",
+        action="store_true",
+        help="Roda tambem a comparacao exploratoria de cenarios de pre-processamento.",
+    )
+    args = parser.parse_args()
+
     df = load_data()
     comparison_df, fitted_pipelines = train_and_compare(df)
 
@@ -222,6 +296,13 @@ def main() -> None:
 
     logger.info("Modelo campeao salvo em %s", CHAMPION_MODEL_PATH)
     logger.info("Tabela comparativa salva em %s", COMPARISON_TABLE_PATH)
+
+    if args.scenarios:
+        logger.info("=== COMPARACAO DE CENARIOS DE PRE-PROCESSAMENTO ===")
+        scenarios_df = compare_preprocessing_scenarios(df)
+        logger.info("\n%s", scenarios_df.round(4).to_string(index=False))
+        scenarios_df.round(4).to_csv(SCENARIOS_TABLE_PATH, index=False)
+        logger.info("Tabela de cenarios salva em %s", SCENARIOS_TABLE_PATH)
 
 
 if __name__ == "__main__":
