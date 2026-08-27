@@ -1,0 +1,13 @@
+scenario,model,roc_auc,pr_auc,f1,recall_churn
+Raw,Logistic Reg,0.8428,0.6365,0.604,0.5588
+Raw,Random Forest,0.8226,0.6182,0.546,0.492
+Raw,KNN,0.7527,0.5,0.4924,0.4305
+Raw,MLP,0.7315,0.5555,0.4591,0.3449
+Scaled,Logistic Reg,0.842,0.6336,0.604,0.5588
+Scaled,MLP,0.8297,0.6175,0.5723,0.5294
+Scaled,Random Forest,0.8222,0.6182,0.546,0.492
+Scaled,KNN,0.7768,0.5191,0.543,0.5321
+Scaled+Balanced,Logistic Reg,0.8415,0.6313,0.6104,0.8021
+Scaled+Balanced,MLP,0.8349,0.6213,0.6205,0.8021
+Scaled+Balanced,Random Forest,0.816,0.5967,0.5784,0.6016
+Scaled+Balanced,KNN,0.7644,0.484,0.5453,0.7888
