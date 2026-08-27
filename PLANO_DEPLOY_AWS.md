@@ -66,9 +66,9 @@ docker compose up --build
 # Em outro terminal:
 curl http://localhost:8000/health
 # Teste o predict com um payload de exemplo do seu dataset Telco:
-curl -X POST http://localhost:8000/predict \
-     -H "Content-Type: application/json" \
-     -d '{"tenure": 12, "MonthlyCharges": 79.9, "Contract": "Month-to-month"}'
+curl -X POST http://127.0.0.1:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"gender":"Female","SeniorCitizen":0,"Partner":"Yes","Dependents":"No","tenure":1,"PhoneService":"No","MultipleLines":"No phone service","InternetService":"DSL","OnlineSecurity":"No","OnlineBackup":"Yes","DeviceProtection":"No","TechSupport":"No","StreamingTV":"No","StreamingMovies":"No","Contract":"Month-to-month","PaperlessBilling":"Yes","PaymentMethod":"Electronic check","MonthlyCharges":29.85,"TotalCharges":29.85}'
 ```
 ✔️ Só avance quando `/health` responder `200` e `/predict` retornar a propensão.
 
