@@ -6,12 +6,15 @@ Repositório: `tc-f1-churn-prediction-api`
 ## Contexto
 Modelo preditivo de churn para uma operadora de telecomunicações, construído da
 EDA até uma API de inferencia, comparando modelos do ecossistema **Scikit-Learn**
-(Regressao Logistica, Random Forest/Ensemble e `MLPClassifier`) e servido via
-**FastAPI**.
+(Regressao Logistica, Random Forest/Ensemble, `MLPClassifier` e KNN) e servido
+via **FastAPI**.
 
-> Status: Etapas 1, 2 e 3 fechadas (ML Canvas, EDA, comparação de modelos,
-> API refatorada e testada). Etapa 4 em andamento: Model Card preenchido com
-> auditoria de viés e validação cruzada executadas; falta gravar o vídeo STAR.
+> Status: **Todas as 4 etapas concluídas.** ML Canvas, EDA, comparação de
+> modelos, API refatorada e testada, Model Card completo (com auditoria de viés
+> e validação cruzada) e vídeo STAR gravado.
+
+## 🎥 Vídeo de apresentação (método STAR)
+[Tech Challenge FIAP Fase 1 — Churn Prediction API · Os Outliers](https://www.youtube.com/watch?v=BQDWi-BpBI8)
 
 ## Quickstart (do zero a API rodando)
 ```bash
@@ -40,7 +43,7 @@ Acesse http://localhost:8000/docs para testar os endpoints.
 ```
 ├── src/churn_prediction/
 │   ├── preprocessing.py    # limpeza de dados + pipeline sklearn (producao)
-│   ├── train.py             # treina e compara os 3 modelos, salva o campeao
+│   ├── train.py             # treina e compara os 4 candidatos, salva o campeao
 │   ├── inference.py         # calcula probabilidade/predicao de churn
 │   ├── model_loader.py      # carrega e cacheia o modelo campeao (.joblib)
 │   ├── evaluation.py        # auditoria de vies por subgrupo + validacao cruzada
@@ -98,10 +101,15 @@ treino/avaliacao do baseline (Regressao Logistica).
 ## 2. Treinar e comparar os modelos (Etapa 2)
 ```bash
 python -m churn_prediction.train
-# treina Regressao Logistica, Random Forest e MLPClassifier no MESMO split/seed,
-# imprime a tabela comparativa, escolhe o campeao por ROC-AUC e salva:
+# treina Regressao Logistica, Random Forest, MLPClassifier e KNN no MESMO
+# split/seed, imprime a tabela comparativa, escolhe o campeao por ROC-AUC
+# (com margem minima de 0.01 sobre o baseline) e salva:
 #   models/champion_model.joblib
 #   models/model_comparison.csv
+
+python -m churn_prediction.train --scenarios
+# alem do acima, roda a comparacao exploratoria de cenarios de pre-processamento
+# (Raw / Scaled / Scaled+Balanced) e salva models/preprocessing_scenarios.csv
 ```
 Discussao guiada (incluindo analise de custo de negocio):
 `notebooks/02_model_comparison.ipynb`.
@@ -118,6 +126,11 @@ dependencia externa nova.
 | Regressao Logistica (campea) | Baseline | 0.8415 |
 | MLPClassifier | Rede neural simples | 0.8349 |
 | Random Forest | Ensemble (arvores) | 0.8218 |
+| KNN | Candidato adicional | 0.7656 |
+
+A comparacao de cenarios (`--scenarios`) mostrou que o escalonamento quase nao
+altera o ROC-AUC, mas o balanceamento eleva o Recall da classe Churn de ~0.56
+para ~0.80 — justificando empiricamente o pipeline de producao adotado.
 
 ## 3. Avaliacao complementar (auditoria de vies + validacao cruzada)
 ```bash
@@ -237,12 +250,18 @@ de mante-lo em 0.5 nesta versao.
 | `[Errno 48/98] Address already in use` | Porta 8000 ocupada. Suba em outra: `uvicorn churn_prediction.api.main:app --port 8080`. |
 | Notebook nao enxerga alteracoes no codigo | O kernel Jupyter mantem os modulos em cache. Use **Restart** e rode as celulas novamente. |
 
-## Time
-| Nome | Papel |
+## Time — Os Outliers
+| Nome | Principais contribuições |
 |---|---|
-| _preencher_ | _preencher_ |
+| Marcos Grosse Moraes | Estrutura do repositório, ML Canvas, EDA e baseline, comparação de modelos, auditoria de viés e validação cruzada, documentação |
+| Felipe Marques | Refatoração modular (`inference.py`, `model_loader.py`), suíte de testes, ambiente com `uv` |
+| Cristian | Testes de estratégias de desbalanceamento (SMOTE / SMOTENC) |
+| João | Candidato KNN e comparação de cenários de pré-processamento |
 
 ## Documentacao relacionada
-- [ML Canvas (PT)](docs/ml_canvas.md) · [ML Canvas (EN)](docs/ml_canvas_en.md)
+- [Vídeo STAR (5 min)](https://www.youtube.com/watch?v=BQDWi-BpBI8)
+- ML Canvas — template oficial OWNML preenchido:
+  [`docs/OWNML_Machine_Learning_Canvas_Churn.pdf`](docs/OWNML_Machine_Learning_Canvas_Churn.pdf)
+  · versões em markdown: [PT](docs/ml_canvas.md) · [EN](docs/ml_canvas_en.md)
 - [Model Card](docs/model_card.md) — performance, limitacoes, vieses e
   investigacao de mitigacao
