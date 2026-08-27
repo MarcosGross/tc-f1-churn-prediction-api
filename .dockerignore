@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 __pycache__/
 *.py[cod]
 .venv/
@@ -17,3 +18,27 @@ tests/
 .env
 *.env
 credentials*
+=======
+.git/
+.github/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.env
+
+data/
+docs/
+notebooks/
+tests/
+
+models/*
+!models/champion_model.joblib
+
+README.md
+requirements-dev.txt
+>>>>>>> 384703a002dd69001aa92fe370026897f39f9299

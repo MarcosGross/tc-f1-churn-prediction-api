@@ -1432,18 +1432,19 @@ dependencies = [
     { name = "fastapi" },
     { name = "imbalanced-learn" },
     { name = "joblib" },
-    { name = "matplotlib" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pandas" },
     { name = "pydantic" },
-    { name = "pytest" },
     { name = "scikit-learn" },
-    { name = "seaborn" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.optional-dependencies]
+analysis = [
+    { name = "matplotlib" },
+    { name = "seaborn" },
+]
 dev = [
     { name = "httpx" },
     { name = "pytest" },
@@ -1457,19 +1458,18 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "imbalanced-learn", specifier = ">=0.12" },
     { name = "joblib", specifier = ">=1.4" },
-    { name = "matplotlib", specifier = ">=3.8" },
+    { name = "matplotlib", marker = "extra == 'analysis'", specifier = ">=3.8" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pydantic", specifier = ">=2.6" },
-    { name = "pytest", specifier = ">=8.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "scikit-learn", specifier = ">=1.4" },
-    { name = "seaborn", specifier = ">=0.13" },
+    { name = "seaborn", marker = "extra == 'analysis'", specifier = ">=0.13" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.29" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "analysis"]
 
 [[package]]
 name = "threadpoolctl"
