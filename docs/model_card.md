@@ -1,6 +1,7 @@
 # Model Card — Churn Prediction
 
 Tech Challenge Fase 1 · Pós Tech Machine Learning Engineering (FIAP)
+Grupo: **Os Outliers** — Marcos, Cristian, Felipe e João
 Repositório: `tc-f1-churn-prediction-api`
 
 ---
@@ -11,6 +12,7 @@ Repositório: `tc-f1-churn-prediction-api`
 |---|---|
 | **Tarefa** | Classificação binária — prever se um cliente vai cancelar (churn) |
 | **Modelo campeão** | Regressão Logística (`class_weight="balanced"`, `max_iter=1000`, `random_state=42`) |
+| **Candidatos avaliados** | Regressão Logística, Random Forest, MLPClassifier e KNN (extra) |
 | **Artefato** | `models/champion_model.joblib` (Pipeline sklearn: pré-processamento + estimador) |
 | **Dataset** | Telco Customer Churn (IBM), 7.043 registros, 21 colunas |
 | **Split** | 80/20 estratificado, seed fixa (`random_state=42`) |
@@ -54,6 +56,7 @@ Avaliado no conjunto de teste (1.409 registros, nunca vistos no treino).
 | **Regressão Logística (campeã)** | **0.8415** | **0.6329** | 0.6136 | 0.7834 |
 | MLPClassifier | 0.8349 | 0.6213 | 0.6205 | 0.8021 |
 | Random Forest | 0.8218 | 0.6108 | 0.5958 | 0.6444 |
+| KNN (candidato adicional) | 0.7656 | 0.4860 | 0.5453 | 0.7888 |
 
 **Critério de escolha:** ROC-AUC (métrica técnica primária definida no ML Canvas),
 com margem mínima de 0.01 exigida de um challenger para destronar o baseline —
@@ -91,9 +94,10 @@ O dataset é moderadamente desbalanceado: **73,5% não-churn / 26,5% churn**.
 | Regressão Logística | `class_weight="balanced"` (nativo do sklearn) |
 | Random Forest | `class_weight="balanced"` (nativo do sklearn) |
 | MLPClassifier | Oversampling manual da classe minoritária, aplicado **somente no treino** |
+| KNN | Oversampling manual da classe minoritária, aplicado **somente no treino** |
 
-**Por que estratégias diferentes:** o `MLPClassifier` do Scikit-Learn não possui
-parâmetro `class_weight`. Sem compensação, seu Recall na classe Churn era 0.5294;
+**Por que estratégias diferentes:** `MLPClassifier` e `KNeighborsClassifier` do
+Scikit-Learn não possuem parâmetro `class_weight`. Sem compensação, seu Recall na classe Churn era 0.5294;
 com oversampling, subiu para 0.8021 — confirmando que estava sendo penalizado
 injustamente na comparação.
 
@@ -143,6 +147,23 @@ Forest) e oversampling manual (MLPClassifier). Justificativas:
 3. Menor complexidade de pipeline, sem necessidade de `imblearn.pipeline.Pipeline`.
 
 ---
+
+### Validação empírica do pipeline (cenários de pré-processamento)
+
+Comparamos três cenários (`python -m churn_prediction.train --scenarios`), com
+os modelos rodando **sem** `class_weight` para isolar o efeito de cada etapa:
+
+| Cenário | Regressão Logística — ROC-AUC | Recall (Churn) |
+|---|---|---|
+| Raw (sem escala, sem balanceamento) | 0.8428 | 0.5615 |
+| Scaled (StandardScaler) | 0.8420 | 0.5588 |
+| Scaled + Balanced (oversampling) | 0.8415 | **0.8021** |
+
+**Conclusão:** o escalonamento praticamente não altera o ROC-AUC, e o
+balanceamento chega a reduzi-lo marginalmente — mas eleva o Recall da classe
+Churn de ~0.56 para ~0.80. Como detectar churners é o objetivo de negócio
+(seção 3), a escolha do pipeline foi guiada pelo Recall e pelo custo, não pelo
+ROC-AUC isolado. Resultados completos em `models/preprocessing_scenarios.csv`.
 
 ## 5. Limitações conhecidas
 
@@ -393,7 +414,10 @@ declarado em `pyproject.toml` (e `uv.lock`, opcional).
 
 ## 10. Referências
 
-- ML Canvas do projeto: `docs/ml_canvas.md` (PT) / `docs/ml_canvas_en.md` (EN)
+- **Vídeo de apresentação (STAR, 5 min)**: https://www.youtube.com/watch?v=BQDWi-BpBI8
+- ML Canvas (template oficial OWNML preenchido):
+  `docs/OWNML_Machine_Learning_Canvas_Churn.pdf`
+  — versões em markdown: `docs/ml_canvas.md` (PT) / `docs/ml_canvas_en.md` (EN)
 - Notebook de EDA: `notebooks/01_eda.ipynb`
 - Notebook de comparação: `notebooks/02_model_comparison.ipynb`
 - Dataset: [IBM Telco Customer Churn](https://github.com/IBM/telco-customer-churn-on-icp4d)
