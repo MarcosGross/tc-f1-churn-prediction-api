@@ -1,0 +1,14 @@
+# Teste local ANTES de subir para a AWS.
+# Comando:  docker compose up --build
+services:
+  churn-api:
+    build: .
+    image: churn-api:local
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else sys.exit(1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
